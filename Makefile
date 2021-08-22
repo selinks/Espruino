@@ -710,6 +710,8 @@ ifdef PROJECTNAME
   PROJ_NAME=$(PROJECTNAME)
 endif
 
+LDFLAGS += -Xlinker -Map=$(PROJ_NAME).map
+
 export CC=$(CCPREFIX)gcc
 export LD=$(CCPREFIX)gcc
 export AR=$(CCPREFIX)ar
@@ -841,6 +843,9 @@ clean:
 	$(Q)rm -f $(PROJ_NAME).bin
 	$(Q)rm -f $(PROJ_NAME).srec
 	$(Q)rm -f $(PROJ_NAME).lst
+	$(Q)rm -f $(PROJ_NAME).app_hex
+	$(Q)rm -f $(PROJ_NAME).map
+	$(Q)rm -f CURRENT_BOARD.make
 
 wrappersources:
 	$(info WRAPPERSOURCES=$(WRAPPERSOURCES))
