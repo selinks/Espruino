@@ -1,0 +1,119 @@
+--- targetlibs/nrf5x_15/components/nfc/t2t_lib/hal_t2t/hal_nfc_t2t.c
++++ targetlibs/nrf5x_15/components/nfc/t2t_lib/hal_t2t/hal_nfc_t2t.c
+@@ -712,27 +711,27 @@ void NFCT_IRQHandler(void)
+                                  NFCT_RXD_AMOUNT_RXDATABYTES_Pos) - NFC_CRC_SIZE;
+         nrf_nfct_event_clear(&NRF_NFCT->EVENTS_RXFRAMEEND);
+ 
+-        /* Look for Tag 2 Type READ Command */
+-        if (m_nfc_rx_buffer[0] == T2T_READ_CMD)
++        /* Frame is garbage, wait for next frame reception */
++        if(rx_data_size == 0)
+         {
+-            if(m_nfc_lib_callback != NULL)
+-            {
+-                /* This callback should trigger transmission of READ Response */
+-                m_nfc_lib_callback(m_nfc_lib_context,
+-                                   HAL_NFC_EVENT_DATA_RECEIVED,
+-                                   (void*)m_nfc_rx_buffer,
+-                                   rx_data_size);
+-            }
+-        }
+-        else
++            NRF_NFCT->TASKS_ENABLERXDATA = 1;
++        } else
++        /* Indicate that SLP_REQ was received - this will cause FRAMEDELAYTIMEOUT error */
++        if(m_nfc_rx_buffer[0] == NFC_SLP_REQ_CMD)
+         {
+-            /* Indicate that SLP_REQ was received - this will cause FRAMEDELAYTIMEOUT error */
+-            if(m_nfc_rx_buffer[0] == NFC_SLP_REQ_CMD)
+-            {
+-                m_slp_req_received = true;
+-            }
+-            /* Not a READ Command, so wait for next frame reception */
++            m_slp_req_received = true;
++
++            /* Wait for next frame reception */
+             NRF_NFCT->TASKS_ENABLERXDATA = 1;
++
++        } else
++        if(m_nfc_lib_callback != NULL)
++        {
++            /* This callback should trigger transmission of a Response */
++            m_nfc_lib_callback(m_nfc_lib_context,
++                               HAL_NFC_EVENT_DATA_RECEIVED,
++                               (void*)m_nfc_rx_buffer,
++                               rx_data_size);
+         }
+ 
+         NRF_LOG_DEBUG("Rx fend");
+--- targetlibs/nrf5x_15/components/nfc/t2t_lib/hal_t2t/hal_nfc_t2t.c
++++ targetlibs/nrf5x_15/components/nfc/t2t_lib/hal_t2t/hal_nfc_t2t.c
+@@ -712,6 +712,9 @@ void NFCT_IRQHandler(void)
+                                  NFCT_RXD_AMOUNT_RXDATABYTES_Pos) - NFC_CRC_SIZE;
+         nrf_nfct_event_clear(&NRF_NFCT->EVENTS_RXFRAMEEND);
+ 
++        /* Use default FRAMEDELAY, for all cases but callback */
++        NRF_NFCT->FRAMEDELAYMAX = 0x1000UL; //302us, taken from datasheet
++
+         /* Frame is garbage, wait for next frame reception */
+         if(rx_data_size == 0)
+         {
+@@ -728,6 +731,9 @@ void NFCT_IRQHandler(void)
+         } else
+         if(m_nfc_lib_callback != NULL)
+         {
++            /* JS-has a high latency, set relaxed FRAMEDELAY and hope for a forgiving reader */
++            NRF_NFCT->FRAMEDELAYMAX = 0xFFFFUL; //4.8ms
++
+             /* This callback should trigger transmission of a Response */
+             m_nfc_lib_callback(m_nfc_lib_context,
+                                HAL_NFC_EVENT_DATA_RECEIVED,
+--- targetlibs/nrf5x_15/components/nfc/t2t_lib/hal_t2t/hal_nfc_t2t.c
++++ targetlibs/nrf5x_15/components/nfc/t2t_lib/hal_t2t/hal_nfc_t2t.c
+@@ -709,14 +709,18 @@ void NFCT_IRQHandler(void)
+     {
+         /* Take into account only number of whole bytes */
+         uint32_t rx_data_size = ((NRF_NFCT->RXD.AMOUNT & NFCT_RXD_AMOUNT_RXDATABYTES_Msk) >>
+-                                 NFCT_RXD_AMOUNT_RXDATABYTES_Pos) - NFC_CRC_SIZE;
++                                 NFCT_RXD_AMOUNT_RXDATABYTES_Pos);
++
++        /* Prevent integer underflow */
++        if(rx_data_size >= NFC_CRC_SIZE) rx_data_size -= NFC_CRC_SIZE;
++
+         nrf_nfct_event_clear(&NRF_NFCT->EVENTS_RXFRAMEEND);
+ 
+         /* Use default FRAMEDELAY, for all cases but callback */
+         NRF_NFCT->FRAMEDELAYMAX = 0x1000UL; //302us, taken from datasheet
+ 
+         /* Frame is garbage, wait for next frame reception */
+-        if(rx_data_size == 0)
++        if((rx_data_size == 0) || (rx_data_size > NFC_RX_BUFFER_SIZE))
+         {
+             NRF_NFCT->TASKS_ENABLERXDATA = 1;
+         } else
+--- targetlibs/nrf5x_15/components/nfc/t2t_lib/hal_t2t/hal_nfc_t2t.c
++++ targetlibs/nrf5x_15/components/nfc/t2t_lib/hal_t2t/hal_nfc_t2t.c
+@@ -732,12 +735,12 @@ void NFCT_IRQHandler(void)
+         NRF_NFCT->FRAMEDELAYMAX = 0x1000UL; //302us, taken from datasheet
+ 
+         /* Frame is garbage, wait for next frame reception */
+-        if((rx_data_size == 0) || (rx_data_size > NFC_RX_BUFFER_SIZE))
++        if((rx_data_size == 0) || (rx_data_size > NFC_BUFFER_SIZE))
+         {
+             NRF_NFCT->TASKS_ENABLERXDATA = 1;
+         } else
+         /* Indicate that SLP_REQ was received - this will cause FRAMEDELAYTIMEOUT error */
+-        if(m_nfc_rx_buffer[0] == NFC_SLP_REQ_CMD)
++        if(m_nfc_buffer[0] == NFC_SLP_REQ_CMD)
+         {
+             m_slp_req_received = true;
+ 
+@@ -753,7 +756,7 @@ void NFCT_IRQHandler(void)
+             /* This callback should trigger transmission of a Response */
+             m_nfc_lib_callback(m_nfc_lib_context,
+                                HAL_NFC_EVENT_DATA_RECEIVED,
+-                               (void*)m_nfc_rx_buffer,
++                               (void*)m_nfc_buffer,
+                                rx_data_size);
+         }
+ 
