@@ -72,3 +72,5 @@ gcc-arm-none-eabi*
 *.user
 *.jdebug
 *.code-workspace
+/compile_commands.json
+/*.map

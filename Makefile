@@ -846,6 +846,7 @@ clean:
 	$(Q)rm -f $(PROJ_NAME).app_hex
 	$(Q)rm -f $(PROJ_NAME).map
 	$(Q)rm -f CURRENT_BOARD.make
+	$(Q)rm -f compile_commands.json
 
 wrappersources:
 	$(info WRAPPERSOURCES=$(WRAPPERSOURCES))
